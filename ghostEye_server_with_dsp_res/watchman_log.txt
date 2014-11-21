@@ -1,0 +1,2 @@
+0  1000  4183  4171  20   0 111848  1080 wait   S+   pts/0      0:00 sh -c ps alx|grep GhostEye_server >watchman_log.txt
+0  1000  4185  4183  20   0 109192   876 pipe_w S+   pts/0      0:00 grep GhostEye_server

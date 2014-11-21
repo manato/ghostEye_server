@@ -1,0 +1,620 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <time.h>
+#include <signal.h>
+#include <errno.h>
+#include <assert.h>
+
+#include "data_for_shm.h"
+
+
+void getConnect(int port, int sock_num);
+int getInfo();
+int getScokInfo();
+int getPicture(int sock_num);
+int photo(char *buf,int sum);
+void sendPicture();
+int sendCoordinates(int left, int top, int right, int bottom);
+
+
+//info of socket 
+int sock0, sock1, sock2, sock3, sock4, sock5;
+/*
+ * whether or not server send image data to android
+ * flag 0:not send, 1:send
+ */ 
+int flag;
+int dataInfo[3];
+char file_name[126];
+
+
+/* for shared memory */
+unsigned char *shrd_ptr_input, *shrd_ptr_output;
+int *shrd_ptr_height, *shrd_ptr_width, *shrd_ptr_size;
+int *shrd_ptr_rbuf_head, *shrd_ptr_rbuf_tail;
+obj_coordinate *shrd_ptr_rbuf;
+
+/* for semaphore */
+int semid;
+
+
+int main(){
+	int count=0;
+	struct timeval start, end;
+	struct timeval start_timeval, end_timeval;                                                                 
+	double sec_timeofday, cycle_time;
+
+
+    /*************************************************************************/
+    /*************************************************************************/
+    // prepare for using shared memory and semaphoer
+    /*************************************************************************/
+    
+    
+    /* for shared memory */
+    key_t shm_key_input, shm_key_output, shm_key_height, shm_key_width, shm_key_size;
+    key_t shm_key_rbuf, shm_key_rbuf_head, shm_key_rbuf_tail;
+    int shrd_id_input, shrd_id_output, shrd_id_height, shrd_id_width, shrd_id_size;
+    int shrd_id_rbuf, shrd_id_rbuf_head, shrd_id_rbuf_tail;
+
+    /* for semaphore control */
+    key_t sem_key;
+
+
+
+    /* key generation */
+    shm_key_input = ftok(INPUT_SHM_PATH, 1);  // key for input file
+    if(shm_key_input == -1) {  // error semantics
+        printf("generate key for input failed\n");
+        return -1;
+    }
+
+    shm_key_output = ftok(OUTPUT_SHM_PATH, 1);  // key for output file
+    if(shm_key_output == -1) {   // error semantics
+        printf("generate key for output failed\n");
+        return -1;
+    }
+
+    shm_key_height = ftok(HEIGHT_SHM_PATH, 1);  // key for height file
+    if(shm_key_height == -1) {   // error semantics
+        printf("generate key for height failed\n");
+        return -1;
+    }
+
+    shm_key_width = ftok(WIDTH_SHM_PATH, 1);  // key for width file
+    if(shm_key_width == -1) {   // error semantics
+        printf("generate key for width failed\n");
+        return -1;
+    }
+
+    shm_key_size = ftok(SIZE_SHM_PATH, 1);  // key for size file
+    if(shm_key_size == -1) {   // error semantics
+        printf("generate key for size failed\n");
+        return -1;
+    }
+
+    shm_key_rbuf = ftok(RBUF_PATH, 1);  // key for ring buffer
+    if(shm_key_rbuf == -1) {  // error semantics
+        printf("generate key for rbuf failed\n");
+        return -1;
+    }          
+
+    shm_key_rbuf_head = ftok(RBUF_HEAD_PATH, 1);  // key for ring buffer head
+    if(shm_key_rbuf_head == -1) {  // error semantics
+        printf("generate key for rbuf_head failed\n");
+        return -1;
+    }          
+
+    shm_key_rbuf_tail = ftok(RBUF_TAIL_PATH, 1);  // key for ring buffer tail
+    if(shm_key_rbuf_tail == -1) {  // error semantics
+        printf("generate key for rbuf_tail failed\n");
+        return -1;
+    }          
+
+
+
+    /* key generation for semaphore */
+    sem_key = ftok(SEM_PATH, 1);  // key for semaphore
+    if(sem_key == -1) {   // error semantics
+        printf("generate key for semaphore failed\n");
+        return -1;
+    }
+
+
+    /* open shared memory */
+    shrd_id_input = shmget(shm_key_input, IMAGE_SIZE, 0666);
+    if(shrd_id_input < 0) {  // error semantics
+        printf("Can't Access to the Shared memory for input...\n");
+        return -1;
+    }
+
+    shrd_id_output = shmget(shm_key_output, IMAGE_SIZE, 0666);
+    if(shrd_id_output < 0) {  // error semantics
+        printf("Can't Access to the Shared memory for output...\n");
+        return -1;
+    }
+
+    shrd_id_height = shmget(shm_key_height, sizeof(int), 0666);
+    if(shrd_id_height < 0) {  // error semantics
+        printf("Can't Access to the Shared memory for height...\n");
+        return -1;
+    }
+
+    shrd_id_width = shmget(shm_key_width, sizeof(int), 0666);
+    if(shrd_id_width < 0) {  // error semantics
+        printf("Can't Access to the Shared memory for width...\n");
+        return -1;
+    }
+
+    shrd_id_size = shmget(shm_key_size, sizeof(int), 0666);
+    if(shrd_id_size < 0) {  // error semantics
+        printf("Can't Access to the Shared memory for size...\n");
+        return -1;
+    }
+
+
+    shrd_id_rbuf = shmget(shm_key_rbuf, MAX_OBJECT_NUM*sizeof(obj_coordinate), 0666);
+    if(shrd_id_rbuf < 0) {
+        printf("Can't Access to the Shared memory for rbuf...\n");
+        return -1;
+    }
+
+    shrd_id_rbuf_head = shmget(shm_key_rbuf_head, sizeof(int), 0666);
+    if(shrd_id_rbuf_head < 0) {
+        printf("Can't Access to the Shared memory for rbuf_head...\n");
+        return -1;
+    }
+
+    shrd_id_rbuf_tail = shmget(shm_key_rbuf_tail, sizeof(int), 0666);
+    if(shrd_id_rbuf_tail < 0) {
+        printf("Can't Access to the Shared memory for rbuf_tail...\n");
+        return -1;
+    }
+
+
+    /* open semaphore */
+    semid = semget(sem_key, 1, 0666);
+    if(semid == -1) {
+        printf("Can't Access to the semaphore\n");
+        return -1;
+    }
+
+    /* get address of shared memory */
+    shrd_ptr_input = (unsigned char*)shmat(shrd_id_input, NULL, 0);
+    shrd_ptr_output = (unsigned char*)shmat(shrd_id_output, NULL, 0);
+
+    shrd_ptr_height = (int*)shmat(shrd_id_height, NULL, 0);
+    shrd_ptr_width = (int*)shmat(shrd_id_width, NULL, 0);
+    shrd_ptr_size = (int*)shmat(shrd_id_size, NULL, 0);
+
+    shrd_ptr_rbuf = (obj_coordinate *)shmat(shrd_id_rbuf, NULL, 0);
+    shrd_ptr_rbuf_head = (int *)shmat(shrd_id_rbuf_head, NULL, 0);
+    shrd_ptr_rbuf_tail = (int *)shmat(shrd_id_rbuf_tail, NULL, 0);
+
+    /*************************************************************************/
+    // prepare for using shared memory and semaphoer
+    /*************************************************************************/
+    /*************************************************************************/
+
+
+
+
+
+
+	//connect to android
+	getConnect(12345, 0);
+	printf("connect0\n");
+	getConnect(12346, 1);
+	printf("connect1\n");
+	/*
+      getConnect(12347, 2);
+      printf("connect2\n");
+      getConnect(12348, 3);
+      printf("connect3\n");
+      getConnect(12349, 4);
+      printf("connect4\n");
+      getConnect(12350, 5);
+      printf("connect5\n");
+	*/
+	//get infomation of whether or not server send image data to android
+	if(getInfo() == -1)
+		return 0;
+
+	gettimeofday( &start_timeval, NULL );
+
+	while(1){
+		gettimeofday(&start, NULL);
+		getSockInfo();
+		switch(dataInfo[0]){
+        case 1:
+            //printf("getPicture1\n");                                                         
+            if(getPicture(1) == -1)
+                return 0;
+            if(flag == 1){
+                printf("sendPicture1\n");
+                sendPicture();
+            }
+            else if(flag == 2){
+                printf("send coordinates\n");
+                // sendCoordinates(left, top, right, bottom);
+                if(sendCoordinates(110, 10, 200, 100 ) == -1)
+                    return -1;
+            }
+            break;
+        case 2:
+            //printf("getPicture2\n");
+            if(getPicture(2) == -1)
+                return 0;
+            if(flag == 1){
+                printf("sendPicture2\n");
+                sendPicture();
+            }
+            else if(flag == 2){
+                printf("send coordinates\n");
+                if(sendCoordinates(130, 150, 111, 111) == -1)
+                    return -1;
+            }
+            break;
+        case 3:       
+            //printf("getPicture3\n");   
+            if(getPicture(3) == -1) 
+                return 0;
+
+            if(flag == 1){
+                printf("sendPicture3\n");
+                sendPicture();
+            }
+            else if(flag == 2){
+                printf("send coordinates\n");
+                if(sendCoordinates(120, 140, 222, 222) == -1)
+                    return -1;
+            }
+            break;
+        case 4:
+            //printf("getPicture4\n");
+            if(getPicture(4) == -1)
+                return 0;
+            if(flag == 1){
+                printf("sendPicture4\n");
+                sendPicture();
+            }
+            else if(flag == 2){
+                printf("send coordinates\n");
+                if(sendCoordinates(120, 140, 222, 222) == -1)
+                    return -1;
+            }
+            break;
+        case 5:
+            if(getPicture(5) == -1)
+                return 0;
+            if(flag == 1){
+                printf("sendPicture4\n");
+                sendPicture();
+            }
+            else if(flag == 2){
+                printf("send coordinates\n");
+                if(sendCoordinates(130, 160, 222, 222) == -1)
+                    return -1;
+            }
+            break;       
+        default:
+            //printf("ERROR: dataInfo[0] is warong\n");
+            //printf("dataInfo[0]: %d\n", dataInfo[0]);
+            break;
+
+		}
+		gettimeofday(&end, NULL);
+		cycle_time = (end.tv_sec - start.tv_sec)
+			+ (end.tv_usec - start.tv_usec) / 1000000.0;
+		printf("%f\n", cycle_time);
+		count++;
+		//printf("%d/100 Finish!!!\n",count);
+	}
+	gettimeofday( &end_timeval, NULL );
+
+	sec_timeofday = (end_timeval.tv_sec - start_timeval.tv_sec)
+		+ (end_timeval.tv_usec - start_timeval.tv_usec) / 1000000.0;
+
+	printf("endtime: %f\n", sec_timeofday);
+	return 0;
+}
+
+void getConnect(int port, int sock_num){
+	struct sockaddr_in addr;
+	struct sockaddr_in client;
+	int len;
+	int sock,tmp;
+	int yes = 1;
+
+	sock = socket(AF_INET, SOCK_STREAM, 0);
+
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port); addr.sin_addr.s_addr = INADDR_ANY;
+	//make it available immediately to connect
+	setsockopt(sock,SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof(yes));
+	bind(sock, (struct sockaddr *)&addr, sizeof(addr));
+	listen(sock, 5);
+	len = sizeof(client);
+
+	tmp = accept(sock, (struct sockaddr *)&client, &len);
+	if(tmp == -1){
+		printf("ERROR: socket cannot accept\n");
+		return ;
+	}
+
+	switch(sock_num){
+    case 0:
+        sock0 = tmp;
+        break;
+    case 1:
+        sock1 = tmp;
+        break;
+    case 2:
+        sock2 = tmp;
+        break;
+    case 3:
+        sock3 = tmp;
+        break;
+    case 4:
+        sock4 = tmp;
+        break;
+    case 5:
+        sock5 = tmp;
+        break;
+    default:
+        printf("ERROR: sock_num is wrong.\n");
+        break;
+	}
+}
+
+int getInfo(){
+	if(recv(sock0, &flag, 4, 0) == -1){
+		printf("ERROR: can not recieve info\n");
+		return -1;
+	}
+
+	if(flag == 0){
+		//printf("do not send image data to Android.\n");
+	}
+	else if(flag == 1){
+		//printf("send image data to Android.\n");
+	}
+	else if(flag == 2){
+		//printf("send image data to Android.\n");
+	}
+	else{
+		printf("ERROR: flag is strange.\nflag = %d\n",flag);
+		return -1;
+	}	
+}
+
+int getSockInfo(){
+	//get infomation that is number of sock and data size
+    if(recv(sock0, &dataInfo, 12, 0) == -1){
+        printf("ERROR: can not recieve Data info\n");
+        return -1;
+    }
+	printf("dataIndo[0] = %d, dataInfo = %d, speed = %d\n", dataInfo[0], dataInfo[1], dataInfo[2]);
+	return 0;
+}
+int getPicture(int sock_num){
+	int sock;
+	int len;
+	int size = 0;
+	unsigned int file_size = 555555;
+	int sum = 0;
+	int yes = 1;
+	int image_size;
+	static unsigned char size_str[20];
+
+	//save image data
+	char buf[400000];
+	static unsigned char buf2[400000];
+
+	struct timeval start, end;
+	double transport_time;
+	
+	switch(sock_num){
+    case 1:
+        sock = sock1;
+        break;
+    case 2:
+        sock = sock2;
+        break;
+    case 3:
+        sock = sock3;
+        break;
+    case 4:
+        sock = sock4;
+        break;
+    case 5:
+        sock = sock5;
+        break;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	
+	image_size = dataInfo[1];
+	printf("%d,",image_size);
+	gettimeofday(&start, NULL);
+	
+	//printf("image_size:%d\n",image_size); 
+	while(1){
+		//recieve image data
+		size = recv(sock, buf+sum, image_size-sum, 0);
+		if(size == 0){
+			printf("ERROR: cannot recive image data\n");
+			return -1;
+		}
+		sum += size;
+		//printf("size:%d__sum:%d\n",size,sum);
+		if(sum == image_size){
+			gettimeofday(&end, NULL);
+			
+			transport_time = (end.tv_sec - start.tv_sec)
+				+ (end.tv_usec - start.tv_usec) / 1000000.0;
+
+			printf("%f,",transport_time);
+
+			//printf("sum == file_size\n");                
+			// save image dataa
+			//strcpy(buf2, buf);
+			photo(buf,image_size);
+			return 0;
+		}
+		else if(sum > image_size){
+			printf("ERROR: sum > file_size\n");
+			return -1;
+		}
+	}
+}
+
+int photo(char *buf,int sum){
+	FILE *fpw;
+	char *fname_w = "photo/";
+	int i, size;
+
+	struct timeval tv;
+	struct tm *tmptr = NULL;	
+
+	//get current time
+	gettimeofday(&tv, NULL);
+	tmptr = localtime(&tv.tv_sec);
+
+	sprintf(file_name,"%s%02d:%02d:%02d:%3d.jpg",fname_w, tmptr->tm_hour, tmptr->tm_min, tmptr->tm_sec, tv.tv_usec/1000);
+
+	//file open
+#if 0
+	fpw = fopen( file_name, "wb" );
+#else
+	fpw = fmemopen( shrd_ptr_input, sum, "wb" );
+#endif
+	if( fpw == NULL ){
+		printf( "書込用 %sファイルが開けません\n", fname_w );
+		return -1;
+	}
+
+	//write 
+#if 0
+	fwrite( buf, sizeof( char ), sum, fpw );
+#else
+    My_sem_operation(semid, LOCK); /* lock semaphore */
+	fwrite( buf, sizeof( char ), sum, fpw );
+    *shrd_ptr_size = sum;
+    My_sem_operation(semid, UNLOCK); /* unlock semaphore */
+
+#endif
+
+	fclose( fpw );
+
+	printf( "%sファイルのコピーが終わりました\n", file_name );
+
+}
+
+// send image data to andrid
+void sendPicture(){
+	//TCP
+	char buf[32];
+	char size_str[20];
+	int n,yes=1;
+
+	FILE *fpr;
+	unsigned char temp[50000];
+
+	int size = 0, re = 0;
+
+	//File path
+	//if you want to send the image data, you shoud set the this file path.
+	if((fpr = fopen( file_name, "rb" )) == NULL ){
+		printf("ERROR: can not open.\n");
+		return;
+	}
+
+	//search size of image file 
+	size = fread( temp, sizeof( unsigned char ), 150000, fpr);
+	sprintf(size_str,"%d",size);
+	//send size of image file to android
+	send(sock1, &size, 4, 0);
+	//send image data to android
+	re = send(sock1, temp, size, 0);
+	if( re == -1 ){
+		switch(errno){
+        case EPIPE:
+            break;
+		}
+	}
+
+	//fflush buffer
+	fflush(stdout);
+	fclose(fpr);
+}
+
+/*send coordinate of targeta
+  sendCoordinates(left, top, right, bottom) */
+/*
+ * ターゲットがいない場合は 
+ *	x1 = -1;
+ *	y1 = -1;
+ *	に設定すること
+ */
+int sendCoordinates(int left, int top, int right, int bottom){
+	int coordinates[4];
+	int re = 0;
+
+    My_sem_operation(semid, LOCK); /* lock semaphore */
+    int head = *shrd_ptr_rbuf_head;
+    int tail = *shrd_ptr_rbuf_tail;
+    My_sem_operation(semid, UNLOCK); /* unlock semaphore */
+
+
+    {//    while( tail - head) {  // read all coordinates from the ring buffer
+	/* coordinates[0] = left;	 */
+	/* coordinates[1] = top; */
+	/* coordinates[2] = right;         */
+	/* coordinates[3] = bottom; */
+
+        My_sem_operation(semid, LOCK); /* lock semaphore */
+        apGetCoordinate(shrd_ptr_rbuf, /* obj_coordinate *queue */
+                        shrd_ptr_rbuf_head, /* int *head */
+                        shrd_ptr_rbuf_tail, /* int *tail */
+                        &coordinates[0],    /* int *left */
+                        &coordinates[1],    /* int *upper */
+                        &coordinates[2],    /* int *right */
+                        &coordinates[4]    /* int *bottom */
+            );
+        My_sem_operation(semid, UNLOCK); /* unlock semaphore */
+
+        /* adjust coordinates for nexus4 */
+#if 0
+        coordinates[0] *= 1280/640;
+        coordinates[1] *= 768/480;
+        coordinates[2] *= 1280/640;
+        coordinates[3] *= 768/480;
+#else
+
+        coordinates[0] = 10;
+        coordinates[1] = 10;
+        coordinates[2] = 200;
+        coordinates[3] = 100;
+#endif
+
+	if(send(sock1, &coordinates, 16, 0) == -1){
+		printf("ERROR: can not send coordinate of target.\n");
+		return -1;
+	}
+
+    My_sem_operation(semid, LOCK); /* lock semaphore */
+    head = *shrd_ptr_rbuf_head;
+    tail = *shrd_ptr_rbuf_tail;
+    My_sem_operation(semid, UNLOCK); /* unlock semaphore */
+
+    }
+
+    printf("**************************************sent \n");
+
+	return 0;	
+}

@@ -1,0 +1,29 @@
+#########################################################
+[USAGE]
+run_geye.sh [OPTION]
+
+[DESCRIPTION]
+    All services are booted by default(with no options).
+
+    Following options are available.
+
+    --nocar
+        don't boot car detection program
+
+    --nopds
+        don't boot pedestrian detection program
+
+    --nosgn
+        don't boot traffic sign detection program
+
+    Above options can be specifyied two or more at the same time.
+    (e.g. you can execute run_geye.sh --nocar --nopds --nosgn)
+    
+    Following options must be specified exclusively.
+
+    --terminate
+        terminate all services
+
+    --help
+        display this help and exit
+#########################################################

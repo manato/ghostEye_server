@@ -1,0 +1,144 @@
+/*************************************************/
+/* program to display image in shared memory */
+/*************************************************/
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+#include <cv.h>
+#include <highgui.h>
+
+#include "data_for_shm.h"
+
+using namespace cv;
+
+main(int argc, char *argv[]) {
+
+    char *pathname, *pathname_height, *pathname_width;
+    key_t shm_key, shm_key_height, shm_key_width;
+    int shrd_id, shrd_id_height, shrd_id_width;
+    unsigned char *shrd_ptr;
+    int  *shrd_ptr_height, *shrd_ptr_width;
+
+    /* for semaphore control */
+    key_t sem_key;
+    int semid;
+
+    if(argc != 4) {
+        printf("/*===============================================================*/\n");
+        printf("USAGE : \n %s <display shared file path> <shared height file path> <shared width file path>\n", argv[0]);
+        printf("/*===============================================================*/\n");
+        printf("program exits...\n");
+        return -1;
+    } 
+
+
+    /* key generation */
+    pathname = argv[1];
+    printf("display %s\n", pathname);
+    shm_key = ftok(pathname, 1);  // key for shared memory
+    if(shm_key == -1) {  // error semantics
+        printf("key generation failed\n");
+        return -1;
+    }
+
+    pathname_height = argv[2];
+    printf("height %s\n", pathname_height);
+    shm_key_height = ftok(pathname_height, 1);  // key for shared memory
+    if(shm_key_height == -1) {  // error semantics
+        printf("key generation failed\n");
+        return -1;
+    }
+
+    pathname_width = argv[3];
+    printf("width %s\n", pathname_width);
+    shm_key_width = ftok(pathname_width, 1);  // key for shared memory
+    if(shm_key_width == -1) {  // error semantics
+        printf("key generation failed\n");
+        return -1;
+    }
+
+    /* key generation for semaphore */
+    sem_key = ftok(SEM_PATH, 1);  // key for semaphore
+    if(sem_key == -1) {  // error semantics
+      printf("generation key for semaphore failed\n");
+      return -1;
+    }
+
+
+    /* open shared memory */
+    shrd_id = shmget(shm_key, IMAGE_SIZE, 0666);  // 0666 : readable and writable for all user
+    if(shrd_id < 0) {  // error semantics
+        printf("Can't Access to the Shared image memory...\n");
+        return -1;
+    }
+
+    shrd_id_height = shmget(shm_key_height, sizeof(int), 0666);  // 0666 : readable and writable for all user
+    if(shrd_id_height < 0) {  // error semantics
+        printf("Can't Access to the Shared height memory...\n");
+        return -1;
+    }
+
+    shrd_id_width = shmget(shm_key_width, sizeof(int), 0666);  // 0666 : readable and writable for all user
+    if(shrd_id_width < 0) {  // error semantics
+        printf("Can't Access to the Shared width memory...\n");
+        return -1;
+    }
+
+
+    /* open semaphore */
+    semid = semget(sem_key, 1, 0666);
+    if(semid == -1) {
+      printf("Can't Access to the semaphore\n");
+      return -1;
+    }
+
+    /* get address of shared memory */
+    shrd_ptr = (unsigned char*)shmat(shrd_id, NULL, 0);
+    shrd_ptr_height = (int*)shmat(shrd_id_height, NULL, 0);
+    shrd_ptr_width = (int*)shmat(shrd_id_width, NULL, 0);
+
+#if 0
+    /* for display */
+    IplImage *iplimg=0;
+
+    /* image loading */
+    iplimg = cvCreateImage(cvSize(*shrd_ptr_width, *shrd_ptr_height), IPL_DEPTH_8U, 3);
+    
+    /* for bitmap image, set the point of origin of image to left below */
+    iplimg->origin = 1;  
+
+    /* skip header information */
+    shrd_ptr += HEADER_SIZE;  
+
+    /* To keep original data, use copied image data */
+    memcpy(iplimg->imageData, shrd_ptr, IMAGE_SIZE);  
+#endif
+
+    /* read image from buffer */
+    CvMat *buf = cvCreateMat(1, IMAGE_SIZE, CV_8UC3);
+
+    My_sem_operation(semid, LOCK);  // lock semaphore
+    //buf->data.ptr = shrd_ptr;
+    memcpy(buf->data.ptr, shrd_ptr, IMAGE_SIZE);
+    My_sem_operation(semid, UNLOCK);  // unlock semaphore
+
+
+    /* by using this function, difference of file format is absorbed */
+    IplImage *iplimg = cvDecodeImage(buf, CV_LOAD_IMAGE_COLOR);
+
+
+    /* output image */
+    cvNamedWindow("display shared memory", CV_WINDOW_AUTOSIZE);
+    cvShowImage("display shared memory", iplimg);
+    printf("height: %d, width: %d\n", *shrd_ptr_height, *shrd_ptr_width);
+    printf("file size %d bytes\n", iplimg->imageSize);
+
+    cvWaitKey(0);
+    
+    /* release image */
+    cvReleaseImage(&iplimg);
+    
+
+}

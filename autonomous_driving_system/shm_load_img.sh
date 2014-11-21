@@ -1,0 +1,4 @@
+#!/bin/sh
+#./load_img /home/hirabayashi/dev/autonomous_driving_system/input_file /home/hirabayashi/dev/autonomous_driving_system/output_file
+#./load_img /home/hirabayashi/dev/autonomous_driving_system/input_file /home/hirabayashi/dev/autonomous_driving_system/output_file /home/hirabayashi/dev/autonomous_driving_system/height_file /home/hirabayashi/dev/autonomous_driving_system/width_file
+./load_img /home/hirabayashi/demo/autonomous_driving_system/input_file /home/hirabayashi/demo/autonomous_driving_system/output_file /home/hirabayashi/demo/autonomous_driving_system/height_file /home/hirabayashi/demo/autonomous_driving_system/width_file

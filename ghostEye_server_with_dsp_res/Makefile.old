@@ -1,0 +1,13 @@
+TARGET = server
+CC = gcc
+
+LIB_PATH	= /usr/local/lib/
+LIBS	= -lrt -pthread
+
+$(TARGET) : server.o 
+	$(CC) -g -L$(LIB_PATH) -o $@ server.o $(LIBS)
+
+server.o : server.c
+	$(CC) -g -L$(LIB_PATH) -c $? $(LIBS)
+
+clean:;	rm -f server.o server ./*~

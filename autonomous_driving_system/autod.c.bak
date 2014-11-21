@@ -1,0 +1,166 @@
+/**********************************************/
+/* daemon program to make posix shared memory */
+/**********************************************/
+
+#include <stdio.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <string.h>
+#include <stdlib.h>
+
+#include <sys/sem.h>
+
+#include "data_for_shm.h"
+
+
+main(int argc, char *argv[]) {
+
+    char *pathname_input, *pathname_output, *pathname_height, *pathname_width;
+    key_t shm_key_input, shm_key_output, shm_key_height, shm_key_width;
+    int shrd_id_input, shrd_id_output, shrd_id_height, shrd_id_width;
+    //int *shrd_ptr_input, *shrd_ptr_output, *shrd_ptr_height, *shrd_ptr_width;
+    //char *shrd_ptr_input, *shrd_ptr_output;
+    unsigned char *shrd_ptr_input, *shrd_ptr_output;
+    int *shrd_ptr_height, *shrd_ptr_width;
+    int check_end_shm;
+
+    /* for semaphore control */
+    union semun ctl_arg;
+    key_t sem_key;
+    int semid;
+
+
+    if(argc != 5) {
+        printf("/*===============================================================*/\n");
+        printf("USAGE : \n %s <shared input file path> <shared output file path> <shared height file path> <shared width file path>\n", argv[0]);
+        printf("NOTE : parameter files must be readable and writable for all user\n");
+        printf("/*===============================================================*/\n");
+        printf("program exits...\n");
+        return;
+    } 
+
+
+    /* key generation */
+    pathname_input = argv[1];
+    printf("shared memory for input will create to %s\n", pathname_input);
+    shm_key_input = ftok(pathname_input, 1);  // key for input file
+    if(shm_key_input == -1) {  // error semantics
+        printf("generate key for input failed\n");
+        return;
+    }
+
+    pathname_output = argv[2];
+    printf("shared memory for output will create to %s\n", pathname_output);
+    shm_key_output = ftok(pathname_output, 1);  // key for output file
+    if(shm_key_output == -1) {  // error semantics
+        printf("generate key for output failed\n");
+        return;
+    }
+
+    pathname_height = argv[3];
+    printf("shared memory for height will create to %s\n", pathname_height);
+    shm_key_height = ftok(pathname_height, 1);  // key for height file
+    if(shm_key_height == -1) {  // error semantics
+        printf("generate key for height failed\n");
+        return;
+    }
+
+    pathname_width = argv[4];
+    printf("shared memory for width will create to %s\n", pathname_width);
+    shm_key_width = ftok(pathname_width, 1);  // key for width file
+    if(shm_key_width == -1) {  // error semantics
+        printf("generate key for width failed\n");
+        return;
+    }
+
+
+    /* key generation for semaphore */
+    sem_key = ftok(SEM_PATH, 1);  // key for semaphore
+    if(sem_key == -1) {  // error semantics         
+        printf("generate key for semaphore failed\n");
+        return;
+    }
+
+
+    /* create shared memory */
+    shrd_id_input = shmget(shm_key_input, IMAGE_SIZE, IPC_CREAT|0666);  // 0666 : readable and writable for all user
+    if(shrd_id_input < 0) {  // error semantics
+        printf("Can't Create Shared memory for input...\n");
+        return;
+    }
+
+    shrd_id_output = shmget(shm_key_output, IMAGE_SIZE, IPC_CREAT|0666);  // 0666 : readable and writable for all user
+    if(shrd_id_output < 0) {  // error semantics
+        printf("Can't Create Shared memory for output...\n");
+        return;
+    }
+
+    shrd_id_height = shmget(shm_key_height, IMAGE_SIZE, IPC_CREAT|0666);  // 0666 : readable and writable for all user
+    if(shrd_id_height < 0) {  // error semantics
+        printf("Can't Create Shared memory for height...\n");
+        return;
+    }
+
+    shrd_id_width = shmget(shm_key_width, IMAGE_SIZE, IPC_CREAT|0666);  // 0666 : readable and writable for all user
+    if(shrd_id_width < 0) {  // error semantics
+        printf("Can't Create Shared memory for width...\n");
+        return;
+    }
+
+    /* create semaphore */
+    semid = semget(sem_key, 1, IPC_CREAT|0666);
+    if(semid == -1) {  // error semantics
+        printf("Can't Create Semaphore...\n");
+        return;
+    }     
+
+    /* initialized semaphore by 1 */
+    ctl_arg.val = 1;
+    if(semctl(semid, 0, SETVAL, ctl_arg) == -1) {
+        printf("semctl error\n");
+        return;
+    }
+
+
+    /* get address of shared memory */
+    shrd_ptr_input = (unsigned char*)shmat(shrd_id_input, NULL, 0);
+    shrd_ptr_output = (unsigned char*)shmat(shrd_id_output, NULL, 0);
+
+    shrd_ptr_height = (int*)shmat(shrd_id_height, NULL, 0);
+    shrd_ptr_width = (int*)shmat(shrd_id_width, NULL, 0);
+
+
+    /* zero clear shared memory */
+    memset(shrd_ptr_input, 0, IMAGE_SIZE);
+    memset(shrd_ptr_output, 0, IMAGE_SIZE);
+    memset(shrd_ptr_height, 0, sizeof(int));
+    memset(shrd_ptr_width, 0, sizeof(int));
+
+
+    printf("/*** shared memory created!! ***/\n");
+    
+    printf("Prease type \"Esc\" and \"Enter\" key to delete shared memory\n");
+
+    /* loop to keep shared memory */
+    while((check_end_shm = getchar())) {
+        if(check_end_shm == 0x1b) {  // if "Esc" key is typed, loop is breaked
+            break;
+        }
+        
+    }
+
+
+    /* delete shared memory */
+    shmctl(shrd_id_input, IPC_RMID, 0);
+    shmctl(shrd_id_output, IPC_RMID, 0);
+    shmctl(shrd_id_height, IPC_RMID, 0);
+    shmctl(shrd_id_width, IPC_RMID, 0);
+
+    /* delete semaphore */
+    semctl(semid, 0, IPC_RMID, ctl_arg);
+
+
+    printf("/*** shared memory deleted!! ***/\n");
+
+
+}
