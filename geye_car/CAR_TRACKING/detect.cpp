@@ -44,6 +44,7 @@
 #include "Common.h"
 
 #include "switch_float.h"
+#include "switch_release.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -184,8 +185,10 @@ FLOAT *detect(IplImage *IM,MODEL *MO,FLOAT thresh,int *D_NUMS,FLOAT *A_SCORE)
 
   time_kernel += tv.tv_sec * 1000.0 + (float)tv.tv_usec / 1000.0;
   time_calc_f_pyramid += tv.tv_sec * 1000.0 + (float)tv.tv_usec / 1000.0;
+#ifdef PRINT_INFO
   printf("\n");
   printf("calc_f_pyramid %f[ms]\n", time_calc_f_pyramid);
+#endif  // ifdef PRINT_INFO
 
   t2=clock();
 
@@ -214,7 +217,7 @@ FLOAT *detect(IplImage *IM,MODEL *MO,FLOAT thresh,int *D_NUMS,FLOAT *A_SCORE)
   //  printf("calc_f_pyramid : %f\n", time_calc_f_pyramid);
   // printf("get_boxes : %f\n", time_get_boxes);
 
-  printf("\n");
+  //  printf("\n");
 #endif
 
   

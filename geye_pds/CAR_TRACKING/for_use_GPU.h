@@ -135,8 +135,8 @@ extern char *conv(unsigned int res);
 /* function for GPU execution correspond to fconvsMT */
 extern 
 FLOAT ***fconvsMT_GPU(
-    CUdeviceptr featp2_dev,
-    int SUM_SIZE_feat,
+    FLOAT **featp2,
+    size_t SUM_SIZE_feat, 
     FLOAT **filter,
     int *sym_info,
     int start,

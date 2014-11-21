@@ -373,7 +373,9 @@ Rootfilters *load_rootfilter(char *filename)
       RF->rootsym[ii]=1;
       
       //test
+#ifdef PRINT_INFO
       printf("root No.%d size %d %d \n",ii,RF->root_size[ii][0],RF->root_size[ii][1]);
+#endif  // ifdef PRINT_INFO
       
     }
   

@@ -83,7 +83,11 @@ int main(void)
   bool FLAG = true;           //file end flag
   
   //parameters
-  FLOAT thresh = -0.5; //threshold score of detection (default :0.0)
+  //  FLOAT thresh = -0.5; //threshold score of detection (default :0.0)
+  //  FLOAT thresh = 0.05; //threshold score of detection (default :0.0)
+  FLOAT thresh = -0.1; //threshold score of detection (default :0.0)
+  //  FLOAT overlap = 0.4; //threshold overlap parameter (default :0.4)
+  //  FLOAT overlap = 0.17; //threshold overlap parameter (default :0.4)
   FLOAT overlap = 0.4; //threshold overlap parameter (default :0.4)
   FLOAT ratio = 1;     //resize ratio
   int TH_length = 80;  //tracking length threshold
@@ -95,9 +99,11 @@ int main(void)
   struct timeval tv_car_detection_start, tv_car_detection_end;
   float time_car_detection;
   float other;
-
+  
+#ifndef RELEASE  
   /* Output file for detect result */
   resFP = fopen("detect_result.dat", "w");
+#endif  // ifndef RELEASE
   
 #define TIME_MEASURE
 #ifdef TIME_MEASURE
@@ -114,17 +120,21 @@ int main(void)
   char *FPASS= get_file_pass(ldata_name);	
   
   int i;
+#ifdef PRINT_INFO
   printf("FPASS:");
   for (i=0;*(FPASS+i) != '\0';i++){
     printf("%c",*(FPASS+i));
   }
   printf("\n");
-  
+#endif  // ifdef PRINT_INFO
+
+
   //open save file 
   if ((fp = fopen(FPASS,"rb")) == NULL) { printf("file open error!!\n"); exit(EXIT_FAILURE);}
-  
+
   //get car-detector model
   MODEL *MO=load_model(ratio);
+
   
   //create lesult information
   RESULT *LR = create_result(0);
@@ -136,8 +146,11 @@ int main(void)
   get_f_size(fp,&curpos,&fsize);
   
   //open image-window(OpenCV)
+#if 0
   cvNamedWindow(WIN_A,CV_WINDOW_AUTOSIZE);	//for scan point mapping on image
+#endif
   //cvNamedWindow(WIN_B,CV_WINDOW_AUTOSIZE);		//for scan point 2D mapping
+
   
   //get movie-file pass
   //char *MPASS= get_file_pass(mov_name);	
@@ -153,10 +166,10 @@ int main(void)
   
   //load laser and movie data
   //for(int im=ss;im<2000;im++)
-  for(int im=1;im<=11;im++)
-  //  for(int im=1;im<=1;im++)      // for profile
+  //  for(int im=1;im<=11;im++)
+  while(1)
     {
-      //int im = 11;
+      int im=1;
       gettimeofday(&tv_1process_start, NULL);
       time_memcpy = 0;
       time_kernel = 0;
@@ -278,7 +291,9 @@ int main(void)
       show_rects(IM_D,CUR,ratio);											//visualize car-boundary-box
       //show_vector(IM_D,TDMAP,CUR,&P_I,ratio);									//visualize velocity-vector
 
+#if 0
       cvShowImage(WIN_A,IM_D);											//show image (RESULT & scan-point)
+#endif
       //cvShowImage(WIN_B,TDMAP);											//show 2D scan-point MAP
 
       //update result 
@@ -303,19 +318,20 @@ int main(void)
       tvsub(&tv_1process_end, &tv_1process_start, &tv);
       one_process = tv.tv_sec * 1000.0 + (float)tv.tv_usec / 1000.0;
 
+#ifdef PRINT_INFO
       //      printf("car_detection : %f\n", time_car_detection);
       printf("memory copy    %f\n", time_memcpy);
       printf("kernel execute %f\n", time_kernel);
       printf("1process : %f\n", one_process);
+#endif  // ifdef PRINT_INFO
 #endif
 
-#if 1
-      //#if 0 // for profile
+
+#if 0
       printf("\n****** To finish program, type \"Esc\" key *****\n");
       int IN_KEY=cvWaitKey(0);
-      //      if(IN_KEY==0x1b) break;
-      //      if(IN_KEY==1048603) // if 'Esc' key is typed
-      if(IN_KEY=='\x1b') // if 'Esc' key is typed
+      //        if(IN_KEY==0x1b) break;
+      if(IN_KEY==1048603) // if 'Esc' key is typed
         break;  
       // else
       //   sleep(3);
@@ -327,11 +343,15 @@ int main(void)
       //cvReleaseImage(&IM_D);						//release detected image
 
       fnum++;
+#ifdef PRINT_INFO
       printf("No %d\n",fnum);
+#endif  // ifdef PRINT_INFO
 	}
 
   //close window
+#if 0
   cvDestroyWindow(WIN_A);	//destroy window
+#endif
   //cvDestroyWindow(WIN_B);	//destroy window
 
   //release car-detector-model
@@ -358,8 +378,10 @@ int main(void)
   printf("execution time : %fms\n", time_mearure*1000./cv::getTickFrequency());
 #endif
 
+#ifndef RELEASE
   fprintf(resFP, "execution time : %fms\n", time_mearure*1000./cv::getTickFrequency());
   fclose(resFP);
+#endif  // ifndef RELEASE
 
   return 0;
 }

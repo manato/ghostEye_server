@@ -38,6 +38,13 @@
 
 #include "switch_float.h"
 
+// for use shared memory
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
+#include "data_for_shm.h"
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -48,6 +55,7 @@
 CvScalar get_color(int coltype);														//define color
 void showboxes(IplImage *Image,MODEL *MO,FLOAT *boxes,int *NUM);						//show root-rectangle-boxes (extended to main.cpp)
 void show_rects(IplImage *Image,RESULT *CUR,FLOAT ratio);								//show rectangle-boxes (extended to main.cpp)
+void show_rects_custom(IplImage *Image,RESULT *CUR,FLOAT ratio, int **rbuf, int *head, int *tail, int semid);									//show rectangle-boxes
 void show_array(IplImage *Image,RESULT *LR,int *PP);									//show integer array(for debug)
 int *show_particles(IplImage *Image,RESULT *CUR,PINFO *P_I);							//show particles (extended to main.cpp)
 int *show_vector_im(IplImage *Image,RESULT *CUR,PINFO *P_I,FLOAT ratio);				//show velocity vector on image
@@ -89,28 +97,347 @@ CvScalar get_color(int coltype)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //show rectangle boxes(with object_tracking result)
 void show_rects(IplImage *Image,RESULT *CUR,FLOAT ratio)
-{		
-	//parameters 
-	const int height = Image->height;
-	const int width = Image->width;
-	const int UpY = 0;
-	const int NEW_Y = Image->height;
+{
+#if 0	
+  //parameters 
+  const int height = Image->height;
+  const int width = Image->width;
+  const int UpY = 0;
+  const int NEW_Y = Image->height;
+  
+  for(int ii=0;ii<CUR->num;ii++)
+    {
+      //int *P = CUR->point+4*ii;
+      int *P = CUR->OR_point+4*ii;
+      CvScalar col = get_color(CUR->type[ii]);
+      CvPoint p1=cvPoint(P[0],P[1]);	
+      CvPoint p2=cvPoint(P[2],P[3]);
+      cvRectangle(Image,p1,p2,col,3);			//draw current-object rectangle
+      cvLine(Image,p1,p2,col,2);
+      p1 = cvPoint(P[0],P[3]);
+      p2 = cvPoint(P[2],P[1]);
+      cvLine(Image,p1,p2,col,2);
+    }
+#else
+  
+  //parameters 
+  const int height = Image->height;
+  const int width = Image->width;
+  const int UpY = 0;
+  const int NEW_Y = Image->height;
+  
+  // generate key
+  // key_t shm_key = ftok(OUTPUT_SHM_PATH, 1);
+  // if(shm_key == -1) {
+  //   printf("key generation for output_SHM is failed\n");
+  // }
+  
+  key_t shm_key_height = ftok(HEIGHT_SHM_PATH, 1);
+  if(shm_key_height == -1) {
+    printf("key generation for height_SHM is failed\n");
+  }
+  
+  key_t shm_key_width = ftok(WIDTH_SHM_PATH, 1);
+  if(shm_key_width == -1) {
+    printf("key generation for width_SHM is failed\n");
+  }
 
-	for(int ii=0;ii<CUR->num;ii++)
-	{
-		//int *P = CUR->point+4*ii;
-		int *P = CUR->OR_point+4*ii;
-		CvScalar col = get_color(CUR->type[ii]);
-		CvPoint p1=cvPoint(P[0],P[1]);	
-		CvPoint p2=cvPoint(P[2],P[3]);
-		cvRectangle(Image,p1,p2,col,3);			//draw current-object rectangle
-		cvLine(Image,p1,p2,col,2);
-		p1 = cvPoint(P[0],P[3]);
-		p2 = cvPoint(P[2],P[1]);
-		cvLine(Image,p1,p2,col,2);
-	}
+
+  // key_t shm_key_rbuf_dst = ftok(RBUF_DST_PATH, 1);
+  // if(shm_key_rbuf_dst == -1) {
+  //   printf("key generation for rbuf_dst_SHM is failed\n");
+  // }
+
+  key_t shm_key_rbuf = ftok(RBUF_PATH, 1);
+  if(shm_key_rbuf == -1) {
+    printf("key generation for rbuf_SHM is failed\n");
+  }
+
+  key_t shm_key_rbuf_head = ftok(RBUF_HEAD_PATH, 1);
+  if(shm_key_rbuf_head == -1) {
+    printf("key generation for rbuf_head_SHM is failed\n");
+  }
+
+  key_t shm_key_rbuf_tail = ftok(RBUF_TAIL_PATH, 1);
+  if(shm_key_rbuf_tail == -1) {
+    printf("key generation for rbuf_tail_SHM is failed\n");
+  }
+
+
+  // generate key for semaphore
+  key_t sem_key = ftok(SEM_PATH, 1);  // key for semaphore
+  if(sem_key == -1) {  // error semantics
+    printf("key heneration for semaphore is failed\n");
+  }
+
+  
+  // access to the shared memory
+  // int shrd_id = shmget(shm_key, IMAGE_SIZE, 0666);
+  // if(shrd_id < 0) {
+  //   printf("Can't Access to the Shared Memory!! \n");
+  // }
+  
+  int shrd_id_height = shmget(shm_key_height, sizeof(int), 0666);
+  if(shrd_id_height < 0) {
+    printf("Can't Access to the Shared Memory!! \n");
+  }
+  
+  int shrd_id_width = shmget(shm_key_width, sizeof(int), 0666);
+  if(shrd_id_width < 0) {
+    printf("Can't Access to the Shared Memory!! \n");
+  }
+
+  // int shrd_id_rbuf_dst = shmget(shm_key_rbuf_dst, RBUF_ELEMENT_NUM*sizeof(int), 0666);
+  // if(shrd_id_rbuf_dst < 0) {
+  //   printf("Can't Access to the Shared Memory!! \n");
+  // }
+
+  //  int shrd_id_rbuf = shmget(shm_key_rbuf, MAX_OBJECT_NUM*sizeof(int*), 0666);
+  int shrd_id_rbuf = shmget(shm_key_rbuf, MAX_OBJECT_NUM*sizeof(obj_coordinate), 0666);
+  if(shrd_id_rbuf < 0) {
+    printf("Can't Access to the Shared Memory!! \n");
+  }
+
+  int shrd_id_rbuf_head = shmget(shm_key_rbuf_head, sizeof(int), 0666);
+  if(shrd_id_rbuf_head < 0) {
+    printf("Can't Access to the Shared Memory!! \n");
+  }
+
+  int shrd_id_rbuf_tail = shmget(shm_key_rbuf_tail, sizeof(int), 0666);
+  if(shrd_id_rbuf_tail < 0) {
+    printf("Can't Access to the Shared Memory!! \n");
+  }
+
+
+
+
+  // open semaphore
+  int semid = semget(sem_key, 1, 0666);
+  if(semid == -1) {
+    printf("Can't Access to the semaphore\n");
+  }
+  
+  //  unsigned char *shrd_ptr = (unsigned char *)shmat(shrd_id, NULL, 0);
+  int *shrd_ptr_height = (int *)shmat(shrd_id_height, NULL, 0);
+  int *shrd_ptr_width = (int *)shmat(shrd_id_width, NULL, 0);
+  //  int *shrd_ptr_rbuf_dst = (int *)shmat(shrd_id_rbuf_dst, NULL, 0);
+  //  int **shrd_ptr_rbuf = (int **)shmat(shrd_id_rbuf, NULL, 0);
+  obj_coordinate *shrd_ptr_rbuf = (obj_coordinate *)shmat(shrd_id_rbuf, NULL, 0);
+  int *shrd_ptr_rbuf_head = (int *)shmat(shrd_id_rbuf_head, NULL, 0);
+  int *shrd_ptr_rbuf_tail = (int *)shmat(shrd_id_rbuf_tail, NULL, 0);
+  
+  // int *tmpptr = shrd_ptr_rbuf_dst;
+  // for(int i=0; i<MAX_OBJECT_NUM; i++) {
+  //   shrd_ptr_rbuf[i] = tmpptr;
+  //   tmpptr += CO_NUM;
+  // }
+
+#if 0
+  //  IplImage *output_image = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 3);
+  IplImage *output_image = cvCreateImage(cvSize(*shrd_ptr_width, *shrd_ptr_height), IPL_DEPTH_8U, 3);
+  //  output_image->imageData = (char *)shrd_ptr;
+  
+  /* for bitmap image, set the point of origin of image to left below */
+  output_image->origin = 1;  
+  
+  
+  /* skip header information */
+  shrd_ptr += HEADER_SIZE;
+  
+  
+  /* To keep original data, use copied image data */
+  //  memcpy(output_image->imageData, shrd_ptr, IMAGE_SIZE);
+  output_image->imageData = (char *)shrd_ptr;
+#endif
+
+#if 0
+  /* read image from buffer */
+  CvMat *buf = cvCreateMat(1, IMAGE_SIZE, CV_8UC3);
+
+  My_sem_operation(semid, LOCK);  // lock semaphore
+  //  buf->data.ptr = shrd_ptr;
+  memcpy(buf->data.ptr, shrd_ptr, IMAGE_SIZE);
+  My_sem_operation(semid, UNLOCK);  // unlock semaphore
+
+  IplImage *output_image = cvDecodeImage(buf, CV_LOAD_IMAGE_COLOR);  // absorb the difference of file format
+#endif
+  
+  for(int ii=0;ii<CUR->num;ii++)
+    {
+      //int *P = CUR->point+4*ii;
+      int *P = CUR->OR_point+4*ii;
+      CvScalar col = get_color(CUR->type[ii]);
+      CvPoint p1=cvPoint(P[0],P[1]);	
+      CvPoint p2=cvPoint(P[2],P[3]);
+      
+      // // draw rectangle to original image
+      // cvRectangle(Image,p1,p2,col,3);			//draw current-object rectangle
+      // cvLine(Image,p1,p2,col,2);
+      
+      // draw rectangle to shared memory image
+      //      cvRectangle(output_image,p1,p2,col,3);			//draw current-object rectangle
+      //      cvLine(output_image,p1,p2,col,2);
+      
+      p1 = cvPoint(P[0],P[3]);
+      p2 = cvPoint(P[2],P[1]);
+      
+      // // draw rectangle to original image
+      // cvLine(Image,p1,p2,col,2);
+      
+      // draw rectangle to shared memory image
+      //      cvLine(output_image,p1,p2,col,2);
+
+      /* write coodinates to ring buffer*/
+      My_sem_operation(semid, LOCK);  // lock semaphore
+      // apSetCoordinate(shrd_ptr_rbuf, P[0], shrd_ptr_rbuf_head, shrd_ptr_rbuf_tail, LEFT);
+      // apSetCoordinate(shrd_ptr_rbuf, P[1], shrd_ptr_rbuf_head, shrd_ptr_rbuf_tail, UPPER);
+      // apSetCoordinate(shrd_ptr_rbuf, P[2], shrd_ptr_rbuf_head, shrd_ptr_rbuf_tail, RIGHT);
+      // apSetCoordinate(shrd_ptr_rbuf, P[3], shrd_ptr_rbuf_head, shrd_ptr_rbuf_tail, BOTTOM);
+      apSetCoordinate(shrd_ptr_rbuf,   // obj_coordinate *queue
+                      shrd_ptr_rbuf_head, // int *head
+                      shrd_ptr_rbuf_tail, // int *tail
+                      P[0],               // int left
+                      P[1],               // int upper
+                      P[2],               // int right
+                      P[3],               // int bottom
+                      CAR                 // int type
+                      //PEDESTRIAN // int type
+                      );
+      My_sem_operation(semid, UNLOCK);  // unlock semaphore
+
+    }
+  
+#if 0
+  /* copy back to the shared memory by png format*/
+  CvMat *buf_for_output = cvEncodeImage(".png", output_image);
+  //CvMat *buf_for_output = cvEncodeImage(".bmp", output_image);
+  //CvMat *buf_for_output = cvEncodeImage(".jpeg", output_image);
+  
+  My_sem_operation(semid, LOCK);  // lock semaphore
+  //  memcpy(shrd_ptr, buf_for_output->data.ptr, IMAGE_SIZE);  // サイズ違いでエラー？
+  memcpy(shrd_ptr, buf_for_output->data.ptr, (buf_for_output->rows)*(buf_for_output->cols)*sizeof(unsigned char));  // サイズ違いでエラー？
+  My_sem_operation(semid, UNLOCK);  // unlock semaphore
+  
+  
+  cvShowImage("for debug", output_image);
+  cvWaitKey(10);
+#endif  
+
+#if 0
+  FILE *testoutput = fopen("./testoutput", "wb");
+  if(testoutput == NULL){
+    printf("test output error\n");
+  }
+
+  unsigned char *tmpptr = (unsigned char *)buf_for_output->data.ptr;
+  for(int i=0; i<IMAGE_SIZE; i++) {
+    fprintf(testoutput, "%c",*tmpptr);
+    tmpptr++;
+  }
+
+  fclose(testoutput);
+#endif
+
+  /* detouch(purge) shared memory */
+  // if(shmdt(shrd_ptr)==-1){
+  //   printf("purge error! (shrd_ptr)\n");
+  // }
+
+  if(shmdt(shrd_ptr_height)==-1){
+    printf("purge error! (shrd_ptr_height)\n");
+  }
+  
+  if(shmdt(shrd_ptr_width)==-1){
+    printf("purge error! (shrd_ptr_width)\n");
+  }
+
+  // if(shmdt(shrd_ptr_rbuf_dst)==-1) {
+  //   printf("purge error! (shrd_ptr_rbuf_dst)\n");
+  // }
+
+  if(shmdt(shrd_ptr_rbuf)==-1) {
+    printf("purge error! (shrd_ptr_rbuf)\n");
+  }
+    
+  if(shmdt(shrd_ptr_rbuf_head)==-1) {
+    printf("purge error! (shrd_ptr_rbuf_head)\n");
+  }
+
+  if(shmdt(shrd_ptr_rbuf_tail)==-1) {
+    printf("purge error! (shrd_ptr_rbuf_tail)\n");
+  }
+#if 0
+  /* release image */
+  cvReleaseImage(&output_image);
+  cvReleaseMat(&buf);
+  cvReleaseMat(&buf_for_output);
+#endif
+
+  
+  
+#endif
 }
 
+
+#if 0
+void show_rects_custom(IplImage *Image,
+                       RESULT *CUR,
+                       FLOAT ratio,
+                       int **rbuf,
+                       int *head,
+                       int *tail,
+                       int semid
+                       )
+{
+
+  // //parameters 
+  // const int height = Image->height;
+  // const int width = Image->width;
+  // const int UpY = 0;
+  // const int NEW_Y = Image->height;
+  
+  for(int ii=0;ii<CUR->num;ii++)
+    {
+      //int *P = CUR->point+4*ii;
+      int *P = CUR->OR_point+4*ii;
+      CvScalar col = get_color(CUR->type[ii]);
+      CvPoint p1=cvPoint(P[0],P[1]);	
+      CvPoint p2=cvPoint(P[2],P[3]);
+      
+      // // draw rectangle to original image
+      // cvRectangle(Image,p1,p2,col,3);			//draw current-object rectangle
+      // cvLine(Image,p1,p2,col,2);
+      
+      // draw rectangle to shared memory image
+      //      cvRectangle(output_image,p1,p2,col,3);			//draw current-object rectangle
+      //      cvLine(output_image,p1,p2,col,2);
+      
+      p1 = cvPoint(P[0],P[3]);
+      p2 = cvPoint(P[2],P[1]);
+      
+      // // draw rectangle to original image
+      // cvLine(Image,p1,p2,col,2);
+      
+      // draw rectangle to shared memory image
+      //      cvLine(output_image,p1,p2,col,2);
+
+      /* write coodinates to ring buffer*/
+      My_sem_operation(semid, LOCK);  // lock semaphore
+      // apSetCoordinate(shrd_ptr_rbuf, P[0], shrd_ptr_rbuf_head, shrd_ptr_rbuf_tail, LEFT);
+      // apSetCoordinate(shrd_ptr_rbuf, P[1], shrd_ptr_rbuf_head, shrd_ptr_rbuf_tail, UPPER);
+      // apSetCoordinate(shrd_ptr_rbuf, P[2], shrd_ptr_rbuf_head, shrd_ptr_rbuf_tail, RIGHT);
+      // apSetCoordinate(shrd_ptr_rbuf, P[3], shrd_ptr_rbuf_head, shrd_ptr_rbuf_tail, BOTTOM);
+      apSetCoordinate(rbuf, P[0], head, tail, LEFT);
+      apSetCoordinate(rbuf, P[1], head, tail, UPPER);
+      apSetCoordinate(rbuf, P[2], head, tail, RIGHT);
+      apSetCoordinate(rbuf, P[3], head, tail, BOTTOM);
+      My_sem_operation(semid, UNLOCK);  // unlock semaphore
+
+    }
+  
+  
+}
+#endif
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //show rectangle boxes(with object_tracking result) for debug
@@ -397,7 +724,9 @@ void show_vector_2D(IplImage *MAP,IplImage *IM,RESULT *CUR,PINFO *P_I,int *I_VEC
 			int YAA2 =xmflag*(int)(-SIN_T*XA1+COS_T*(-ARL))+Yimg;
 			CvPoint PP = cvPoint(XAA1,YAA1);
 
+#ifdef PRINT_INFO
 			printf("%d %d %d %d\n",XAA1,YAA1,XimgA,YimgA);
+#endif  // ifdef PRINT_INFO
 			cvLine(MAP,PC2,PP,COL2,3);
 			PP = cvPoint(XAA2,YAA2);
 			cvLine(MAP,PC2,PP,COL2,3);
@@ -504,7 +833,9 @@ void show_det_score(IplImage *Image,FLOAT *ac_score,RESULT *CUR)
 			p2 = cvPoint(P[2],P[1]);
 			cvLine(D_score,p1,p2,col,2);
 		}
+#if 0
 		cvShowImage("Detector Score",D_score);	//show image
+#endif
 	}
 	cvReleaseImage(&D_score );
 }
@@ -547,6 +878,7 @@ void save_result(IplImage *Image,int fnum)
 //load_successive_image
 IplImage *load_suc_image(int fnum)
 {
+#if 0
   char pass[MAXLINE];
   char num[8];
   //strcpy_s(pass,sizeof(pass),IN_S_NAME);
@@ -559,6 +891,155 @@ IplImage *load_suc_image(int fnum)
   strcat(pass, EX_NAME);
   printf("%s\n",pass);
   return(cvLoadImage(pass,CV_LOAD_IMAGE_COLOR));
+#else
+
+  /*****************************************************/
+  // generate key
+  /*****************************************************/
+  key_t shm_key = ftok(INPUT_SHM_PATH, 1);
+  if(shm_key == -1) {
+    printf("key generation for input_SHM is failed\n");
+  }
+
+  key_t shm_key_height = ftok(HEIGHT_SHM_PATH, 1);
+  if(shm_key == -1) {
+    printf("key generation for height_SHM is failed\n");
+  }
+
+  key_t shm_key_width = ftok(WIDTH_SHM_PATH, 1);
+  if(shm_key == -1) {
+    printf("key generation for width_SHM is failed\n");
+  }
+
+
+  // generation key for semaphore
+  key_t sem_key = ftok(SEM_PATH, 1);  // key for semaphore
+  if(sem_key == -1) {
+    printf("key generation for semaphore is failed\n");
+  }
+
+  // generation key for reader-writer lock
+  key_t shm_key_rwlock = ftok(RWLOCK_SHM_PATH, 1);
+  if(shm_key_rwlock == -1) {
+    printf("key generation for reader-writer lock failed\n");
+  }
+
+  // key generation for image update checker 
+  key_t shm_key_imgupd = ftok(IMGUPD_SHM_PATH, 1);
+    if(shm_key_imgupd == -1) {  // error semantics
+        printf("generation key for image update checker failed\n");
+    }
+
+
+  /*****************************************************/
+  // access to the shared memory
+  /*****************************************************/
+  int shrd_id = shmget(shm_key, IMAGE_SIZE, 0666);
+  if(shrd_id < 0) {
+    printf("Can't Access to the Shared Memory!! \n");
+  }
+
+  int shrd_id_height = shmget(shm_key_height, sizeof(int), 0666);
+  if(shrd_id_height < 0) {
+    printf("Can't Access to the Shared Memory!! \n");
+  }
+
+  int shrd_id_width = shmget(shm_key_width, sizeof(int), 0666);
+  if(shrd_id_width < 0) {
+    printf("Can't Access to the Shared Memory!! \n");
+  }
+
+
+  // open semaphore
+  int semid = semget(sem_key, 1, 0666);
+  if(semid == -1) {
+    printf("Can't Access to the semaphore\n");
+  }
+
+  // open reader-writer lock
+  int shrd_id_rwlock = shmget(shm_key_rwlock, sizeof(pthread_rwlock_t), 0666);
+
+
+  // access shared image update checker 
+  int shrd_id_imgupd = shmget(shm_key_imgupd, sizeof(char)*256, 0666);
+  if(shrd_id_imgupd < 0) {  // error semantics
+    printf("Can't Access Shared memory for image update checker...\n");
+    }
+
+
+  unsigned char *shrd_ptr = (unsigned char*)shmat(shrd_id, NULL, 0);
+  int *shrd_ptr_height = (int*)shmat(shrd_id_height, NULL, 0);
+  int *shrd_ptr_width = (int*)shmat(shrd_id_width, NULL, 0);
+
+  // attach reader-writer lock
+  pthread_rwlock_t *shrd_ptr_rwlock = (pthread_rwlock_t *)shmat(shrd_id_rwlock, NULL, 0);
+
+
+  // attach image update checker
+  char *shrd_ptr_imgupd = (char*)shmat(shrd_id_imgupd, NULL, 0);
+  
+#if 0
+  //  IplImage *image = cvCreateImage(cvSize(640, 480), IPL_DEPTH_8U, 3);
+  IplImage *image = cvCreateImage(cvSize(*shrd_ptr_width, *shrd_ptr_height), IPL_DEPTH_8U, 3);
+  
+  /* for bitmap image, set the point of origin of image to left below */
+  image->origin = 1;
+  
+  /* skip header information */
+  shrd_ptr += HEADER_SIZE;
+
+  /* To keep original data, use copied image data */
+  //  memcpy(image->imageData, shrd_ptr, IMAGE_SIZE);
+  image->imageData = (char *)shrd_ptr;
+#endif
+
+  // image update check
+  static char imgupd_before[256] = {0};
+  int upd_check = 0;
+  while(1)  {
+    My_sem_operation(semid, LOCK); // lock semaphore
+    upd_check = strcmp(shrd_ptr_imgupd, imgupd_before);
+    My_sem_operation(semid, UNLOCK); // unlock semaphore
+
+    // if shrd_ptr_imgupd == imgupd_before, then continue loop
+    if(upd_check != 0)
+      {
+        My_sem_operation(semid, LOCK); // lock semaphore
+        strcpy(imgupd_before, shrd_ptr_imgupd);
+        My_sem_operation(semid, UNLOCK); // unlock semaphore
+        break;
+      }
+  }
+
+
+  /* read image from buffer */
+  CvMat *buf = cvCreateMat(1, IMAGE_SIZE, CV_8UC3);
+  
+  //  My_sem_operation(semid, LOCK); // lock semaphore
+  int rtn = pthread_rwlock_rdlock(shrd_ptr_rwlock); // lock reader-writer lock as reader
+
+  if(rtn != 0) {
+    printf("pthread_rwlock_rdlock failed...\n");
+  }
+  memcpy(buf->data.ptr, shrd_ptr, IMAGE_SIZE);
+  rtn = pthread_rwlock_unlock(shrd_ptr_rwlock); // unlock reader-writer lock
+  if(rtn != 0) {
+    printf("pthread_rwlock_unlock failed...\n");
+  }
+
+  //  My_sem_operation(semid, UNLOCK); // unlock semaphore
+
+
+  IplImage *image = cvDecodeImage(buf, CV_LOAD_IMAGE_COLOR);  // absorb the difference of file format
+
+  // test: output shared memory data
+  // cvNamedWindow("test output", CV_WINDOW_AUTOSIZE);
+  // cvShowImage("test output", image);
+  // cvWaitKey(0);
+
+  return(image);
+
+#endif
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////

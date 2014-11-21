@@ -9,7 +9,7 @@
 #ifndef INCLUDED_COMMH_
 #define INCLUDED_COMMH_
 
-#define s_free(a) {free(a);(a)=NULL;}			//release function (for safety release)
+#define s_free(a) {free(a);a=NULL;}			//release function (for safety release)
 
 #endif
 

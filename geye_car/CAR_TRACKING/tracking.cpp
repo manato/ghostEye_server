@@ -39,6 +39,7 @@
 #include "Common.h"
 
 #include "switch_float.h"
+#include "switch_release.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -156,10 +157,14 @@ RESULT *get_new_rects(IplImage *Image,MODEL *MO,FLOAT *boxes,int *NUM)
       OPP[2] = (int)((FLOAT)PP[2]/ratio);
       OPP[3] = (int)((FLOAT)PP[3]/ratio);
       
+#ifdef PRINT_INFO
       //for debug 
       //printf("x1:%d y1:%d x2:%d y2:%d\n",PP[0],PP[1],PP[2],PP[3]);
       printf("scale:%f score:%f type:%d\n",CUR->scale[ii],CUR->score[ii],CUR->type[ii]);
+#endif  // ifdef PRINT_INFO
+#ifndef RELEASE
       fprintf(resFP, "scale:%f score:%f type:%d\n",CUR->scale[ii],CUR->score[ii],CUR->type[ii]);
+#endif  // ifndef RELEASE
     }
   s_free(Avec);	
   return(CUR);

@@ -12,3 +12,11 @@ CAR_TRACKING:
 clean:
 	make --directory="CAR_TRACKING/" --file=CAR_TRACKING.makefile clean
 
+# Install executable file to /usr/local/geye/bin
+install:
+	cp ./CAR_TRACKING/2010_2_3.txt /usr/local/geye/bin/pedestrian_detecter/2010_2_3.txt
+	cp ./CAR_TRACKING/person_comp.csv /usr/local/geye/bin/pedestrian_detecter/person_comp.csv
+	cp ./CAR_TRACKING/person_root.csv /usr/local/geye/bin/pedestrian_detecter/person_root.csv
+	cp ./CAR_TRACKING/person_part.csv /usr/local/geye/bin/pedestrian_detecter/person_part.csv
+	cp ./gccRelease/GPU_function.cubin /usr/local/geye/bin/pedestrian_detecter/GPU_function.cubin
+	cp ./gccRelease/CAR_TRACKING.exe /usr/local/geye/bin/pedestrian_detecter/pedestrian_detecter

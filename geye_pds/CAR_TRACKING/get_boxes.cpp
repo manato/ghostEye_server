@@ -18,7 +18,7 @@
 
 #include "for_use_GPU.h"
 #include "switch_float.h"
-#include "drvapi_error_string.h"
+#include "switch_release.h"
 
 CUdeviceptr *pm_size_array_dev;
 CUdeviceptr *PIDX_array_dev;
@@ -788,27 +788,14 @@ FLOAT *get_boxes(FLOAT **features,FLOAT *scales,int *FSIZE,MODEL *MO,int *Dnum,F
     }  //for (level)  // feature's loop(A's loop) 1level 1picture
 
 
-  /* upload feature to GPU*/
-  CUdeviceptr featp2_dev;
-  res = cuMemAlloc(&featp2_dev, SUM_SIZE_feat);
-  if (res != CUDA_SUCCESS) {
-    printf("cuMemAlloc(featp2_dev) failed: res = %d\n->%s\n", res, getCudaDrvErrorString(res));
-    exit(1);
-  }
-
-  res = cuMemcpyHtoD(featp2_dev, &featp2[0][0], SUM_SIZE_feat);
-  if (res != CUDA_SUCCESS) {
-    printf("cuMemcpyHtoD(featp2) failed: res = %d\n->%s\n", res, getCudaDrvErrorString(res));
-    exit(1);
-  }
 
 
   ///////root calculation/////////
   /* calculate model score (only root) */
   gettimeofday(&tv_root_score_start, NULL);
   rootmatch = fconvsMT_GPU(
-                           featp2_dev,
-                           SUM_SIZE_feat,
+                           featp2,
+                           SUM_SIZE_feat, 
                            rootfilter, 
                            rootsym, 
                            1, 
@@ -836,7 +823,7 @@ FLOAT *get_boxes(FLOAT **features,FLOAT *scales,int *FSIZE,MODEL *MO,int *Dnum,F
       /* calculate model score (only part) */
       gettimeofday(&tv_part_score_start, NULL);
       partmatch = fconvsMT_GPU(
-                               featp2_dev,
+                               featp2,
                                SUM_SIZE_feat,
                                partfilter, 
                                part_sym, 
@@ -866,13 +853,6 @@ FLOAT *get_boxes(FLOAT **features,FLOAT *scales,int *FSIZE,MODEL *MO,int *Dnum,F
     printf("cuCtxSetCurrent(ctx[0]) failed: res = %s\n", conv(res));
     exit(1);
   }
-
-  res  = cuMemFree(featp2_dev);
-  if (res != CUDA_SUCCESS) {
-    printf("cuMemFree(featp2_dev) failed: res = %d\n->%s\n", res, getCudaDrvErrorString(res));
-    exit(1);
-  }
-
 
   gettimeofday(&tv_make_c_end, NULL);
 
@@ -1332,8 +1312,9 @@ FLOAT *get_boxes(FLOAT **features,FLOAT *scales,int *FSIZE,MODEL *MO,int *Dnum,F
           gettimeofday(&tv_dt_end, NULL);
           tvsub(&tv_dt_end, &tv_dt_start, &tv);
           time_dt += tv.tv_sec * 1000.0 + (float)tv.tv_usec / 1000.0;
-         
-
+          
+          
+          
           /* add part score */
           for(int level=interval; level<L_MAX; level++){
             int L = level - interval;          
@@ -1639,11 +1620,12 @@ FLOAT *get_boxes(FLOAT **features,FLOAT *scales,int *FSIZE,MODEL *MO,int *Dnum,F
   // printf("============================================\n");
   // printf("\n");
   
+#ifdef PRINT_INFO
   printf("root SCORE : %f\n", time_root_score);
   printf("part SCORE : %f\n", time_part_score);
   printf("dt  : %f\n", time_dt);
   printf("calc_a_score : %f\n", time_calc_a_score);
-  
+#endif  // ifdef PRINT_INFO
 
 #endif
   
@@ -1740,6 +1722,7 @@ FLOAT *get_boxes(FLOAT **features,FLOAT *scales,int *FSIZE,MODEL *MO,int *Dnum,F
   s_free(rm_size_array);
   s_free(pm_size_array[0]);
   s_free(pm_size_array);
+  
 
 
   /* Output boundary-box coorinate information */

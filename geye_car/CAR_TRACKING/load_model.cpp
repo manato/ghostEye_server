@@ -17,6 +17,7 @@
 
 #include "for_use_GPU.h"
 #include "switch_float.h"
+#include "switch_release.h"
 
 #ifndef WIN32
 typedef int errno_t;
@@ -372,8 +373,10 @@ Rootfilters *load_rootfilter(char *filename)
         }
       RF->rootsym[ii]=1;
       
+#ifdef PRINT_INFO
       //test
       printf("root No.%d size %d %d \n",ii,RF->root_size[ii][0],RF->root_size[ii][1]);
+#endif  // ifdef PRINT_INFO
       
     }
   

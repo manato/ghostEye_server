@@ -31,6 +31,7 @@
 #include <stdio.h>	
 
 #include "switch_float.h"
+#include "switch_release.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -53,17 +54,22 @@
 #define OUT_NAME		"Out_Image/res"		//Result name
 #define EX_NAME			".png"
 
+#ifdef RELEASE
+
+#define F_NAME_COM "/usr/local/geye/bin/car_detecter/car_comp.csv" //file name (component)
+#define F_NAME_ROOT	"/usr/local/geye/bin/car_detecter/car_root.csv" //file name (root_filter)
+#define F_NAME_PART	"/usr/local/geye/bin/car_detecter/car_part.csv" //file name (part_filter)
+
+#else
+
 //#define F_NAME_COM		"car_comp.csv"			//file name (component)
-#define F_NAME_COM		"./CAR_TRACKING/car_comp.csv"			//file name (component)
-//#define F_NAME_COM		"./CAR_TRACKING/person_comp.csv"			//file name (component)
-
+#define F_NAME_COM "./CAR_TRACKING/car_comp.csv" //file name (component)
 //#define F_NAME_ROOT		"car_root.csv"			//file name (root_filter)
-#define F_NAME_ROOT		"./CAR_TRACKING/car_root.csv"			//file name (root_filter)
-//#define F_NAME_ROOT		"./CAR_TRACKING/person_root.csv"			//file name (root_filter)
-
+#define F_NAME_ROOT "./CAR_TRACKING/car_root.csv"			//file name (root_filter)
 //#define F_NAME_PART		"car_part.csv"			//file name (part_filter)
-#define F_NAME_PART		"./CAR_TRACKING/car_part.csv"			//file name (part_filter)
-//#define F_NAME_PART		"./CAR_TRACKING/person_part.csv"			//file name (part_filter)
+#define F_NAME_PART	"./CAR_TRACKING/car_part.csv"			//file name (part_filter)
+
+#endif /* ifdef RELEASE */
 
 ///////////////////////
 //struct information///
