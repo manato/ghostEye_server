@@ -1,0 +1,11 @@
+# ignore(not to be traced) backup file 
+*~
+
+# ignore(not to be traced) CAR_TRACKING/gccDebug and CAR_TRACKING/gccRelease 
+CAR_TRACKING/gccDebug/
+CAR_TRACKING/gccRelease/
+
+# ignore gccRelease/ and gccDebug/ directoy
+gccDebug/
+gccRelease/
+
